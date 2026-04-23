@@ -7,7 +7,7 @@ from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Smart Irrigation AI", layout="wide")
 
-st.title("🌱 Smart Irrigation AI System (Water Volume MVP)")
+st.title("🌱 Smart Irrigation AI System (Water Efficiency MVP)")
 
 # ----------------------------
 # INPUTS
@@ -79,7 +79,6 @@ def recommend_irrigation(df, min_temp, max_current_rain, max_future_rain, irriga
         current_time = df.loc[i, "time"]
         current_rain = df.loc[i, "rain"]
         current_temp = df.loc[i, "temp"]
-
         future_rain = df.loc[i:i+12, "rain"].sum()
 
         if current_time.hour in irrigation_hours:
@@ -96,6 +95,18 @@ def recommend_irrigation(df, min_temp, max_current_rain, max_future_rain, irriga
                 })
 
     return recommendations
+
+
+def calculate_water_savings(schedule, days=14):
+    traditional_daily = 10.0  # L/m²/day
+    traditional_total = traditional_daily * days
+
+    ai_total = sum(item["liters"] for item in schedule)
+
+    saved = traditional_total - ai_total
+    percent = (saved / traditional_total) * 100 if traditional_total > 0 else 0
+
+    return round(saved, 1), round(percent, 1)
 
 
 def create_map(lat, lon):
@@ -120,6 +131,8 @@ if st.session_state.run:
             irrigation_hours,
             stress
         )
+
+        saved_liters, saved_percent = calculate_water_savings(schedule)
 
         # MAP
         st.subheader("📍 Location Map")
@@ -156,6 +169,11 @@ if st.session_state.run:
                 )
         else:
             st.warning("No irrigation recommended")
+
+        # WATER SAVINGS
+        st.subheader("🌍 Estimated Water Savings")
+        st.metric("Water Saved", f"{saved_liters} L/m²")
+        st.metric("Savings", f"{saved_percent}%")
 
     except Exception as e:
         st.error(f"Error: {e}")
