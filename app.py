@@ -2,6 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
+import folium
+from streamlit_folium import st_folium
 
 st.title("Smart Irrigation MVP")
 
@@ -74,6 +76,16 @@ def plot_rain(df, irrigation_times):
     return fig
 
 
+def show_map(lat, lon):
+    m = folium.Map(location=[lat, lon], zoom_start=11)
+    folium.Marker(
+        [lat, lon],
+        tooltip="Irrigation Site"
+    ).add_to(m)
+
+    return m
+
+
 if st.button("Load Weather Data"):
     try:
         data = get_weather(lat, lon)
@@ -83,20 +95,21 @@ if st.button("Load Weather Data"):
 
         st.success("Weather data loaded successfully")
 
+        # MAP
+        st.subheader("Location")
+        map_object = show_map(lat, lon)
+        st_folium(map_object, width=700, height=400)
+
+        # INDEX
         st.subheader("Water Stress Index")
         st.metric("Stress Score", f"{stress:.1f}/100")
 
-        if stress > 70:
-            st.error("High irrigation need")
-        elif stress > 40:
-            st.warning("Moderate irrigation need")
-        else:
-            st.success("Low irrigation need")
-
+        # GRAPH
         fig = plot_rain(df, irrigation_times)
         st.pyplot(fig)
         plt.close(fig)
 
+        # SCHEDULE
         st.subheader("Recommended Irrigation Times")
 
         if irrigation_times:
