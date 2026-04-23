@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import matplotlib.pyplot as plt
 
 st.title("Smart Irrigation MVP")
 
@@ -33,6 +34,19 @@ def build_dataframe(data):
     return df
 
 
+def plot_rain(df):
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    ax.plot(df["datetime"], df["precipitation_mm"])
+    ax.set_xlabel("Date / Time")
+    ax.set_ylabel("Precipitation (mm)")
+    ax.set_title("Precipitation History + Forecast")
+
+    plt.xticks(rotation=45)
+
+    return fig
+
+
 if st.button("Load Weather Data"):
     try:
         data = get_weather(lat, lon)
@@ -40,6 +54,10 @@ if st.button("Load Weather Data"):
 
         st.success("Weather data loaded successfully")
         st.dataframe(df)
+
+        fig = plot_rain(df)
+        st.pyplot(fig)
+        plt.close(fig)
 
     except Exception as e:
         st.error(f"Error: {e}")
