@@ -34,13 +34,31 @@ def build_dataframe(data):
     return df
 
 
-def plot_rain(df):
+def recommend_irrigation(df):
+    irrigation_times = []
+
+    for _, row in df.iterrows():
+        hour = row["datetime"].hour
+        rain = row["precipitation_mm"]
+
+        if rain == 0 and hour in [5, 6, 7]:
+            irrigation_times.append(row["datetime"])
+
+    return irrigation_times
+
+
+def plot_rain(df, irrigation_times):
     fig, ax = plt.subplots(figsize=(12, 5))
 
-    ax.plot(df["datetime"], df["precipitation_mm"])
+    ax.plot(df["datetime"], df["precipitation_mm"], label="Precipitation (mm)")
+
+    for t in irrigation_times:
+        ax.axvline(t, linestyle="--", alpha=0.6)
+
     ax.set_xlabel("Date / Time")
     ax.set_ylabel("Precipitation (mm)")
-    ax.set_title("Precipitation History + Forecast")
+    ax.set_title("Precipitation and Recommended Irrigation")
+    ax.legend()
 
     plt.xticks(rotation=45)
 
@@ -51,13 +69,21 @@ if st.button("Load Weather Data"):
     try:
         data = get_weather(lat, lon)
         df = build_dataframe(data)
+        irrigation_times = recommend_irrigation(df)
 
         st.success("Weather data loaded successfully")
-        st.dataframe(df)
 
-        fig = plot_rain(df)
+        fig = plot_rain(df, irrigation_times)
         st.pyplot(fig)
         plt.close(fig)
+
+        st.subheader("Recommended Irrigation Times")
+
+        if irrigation_times:
+            for t in irrigation_times:
+                st.write(t)
+        else:
+            st.write("No irrigation recommended")
 
     except Exception as e:
         st.error(f"Error: {e}")
