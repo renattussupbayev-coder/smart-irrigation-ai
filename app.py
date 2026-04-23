@@ -7,7 +7,7 @@ from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Smart Irrigation AI", layout="wide")
 
-st.title("🌱 Smart Irrigation AI System (Predictive MVP)")
+st.title("🌱 Smart Irrigation AI System (Predictive MVR)")
 
 lat = st.number_input("Latitude", value=43.2389)
 lon = st.number_input("Longitude", value=76.8897)
