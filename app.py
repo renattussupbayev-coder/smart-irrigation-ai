@@ -15,8 +15,8 @@ st.title("🌱 Smart Irrigation AI System (Stable MVP)")
 # ----------------------------
 # INPUT
 # ----------------------------
-lat = st.number_input("Latitude", value=43.2389)
-lon = st.number_input("Longitude", value=76.8897)
+lat = st.number_input("Latitude", value=45.2389)
+lon = st.number_input("Longitude", value=78.8897)
 
 # ----------------------------
 # SESSION STATE (IMPORTANT FIX)
