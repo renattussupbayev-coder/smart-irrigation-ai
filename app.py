@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import pandas as pd
 
 st.title("Smart Irrigation MVP")
 
@@ -23,12 +24,22 @@ def get_weather(lat, lon):
     return response.json()
 
 
+def build_dataframe(data):
+    df = pd.DataFrame({
+        "datetime": pd.to_datetime(data["hourly"]["time"]),
+        "precipitation_mm": data["hourly"]["precipitation"]
+    })
+
+    return df
+
+
 if st.button("Load Weather Data"):
     try:
         data = get_weather(lat, lon)
+        df = build_dataframe(data)
 
         st.success("Weather data loaded successfully")
-        st.write(data)
+        st.dataframe(df)
 
     except Exception as e:
         st.error(f"Error: {e}")
