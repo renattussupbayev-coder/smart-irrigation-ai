@@ -5,61 +5,62 @@ import matplotlib.pyplot as plt
 import folium
 from streamlit_folium import st_folium
 
-st.set_page_config(page_title="Smart Irrigation AI", layout="wide")
+# ----------------------------
+# НАСТРОЙКИ СТРАНИЦЫ
+# ----------------------------
+st.set_page_config(page_title="Умный полив ИИ", layout="wide")
 
-st.title("🌱 Smart Irrigation AI System (Plant-Based MVP)")
+st.title("🌱 Система умного полива на основе ИИ")
 
 # ----------------------------
-# INPUTS
+# ВВОД ДАННЫХ
 # ----------------------------
 col1, col2 = st.columns(2)
 
 with col1:
-    lat = st.number_input("Latitude", value=43.2389)
-    lon = st.number_input("Longitude", value=76.8897)
+    широта = st.number_input("Широта", value=43.2389)
+    долгота = st.number_input("Долгота", value=76.8897)
 
-    plant_type = st.selectbox(
-        "Plant Type",
-        ["Grass", "Vegetables", "Trees", "Greenhouse crops"]
+    тип_растения = st.selectbox(
+        "Тип растения",
+        ["Газон", "Овощи", "Деревья", "Тепличные культуры"]
     )
 
 with col2:
-    min_temp = st.number_input("Min temperature (°C)", value=15.0)
-    max_rain = st.number_input("Max rain (mm)", value=0.2)
-    irrigation_hours = st.multiselect(
-        "Allowed irrigation hours",
+    мин_температура = st.number_input("Минимальная температура для полива (°C)", value=15.0)
+    макс_дождь = st.number_input("Максимальный текущий дождь (мм)", value=0.2)
+    часы_полива = st.multiselect(
+        "Разрешённые часы полива",
         options=list(range(24)),
         default=[4, 5, 6, 7]
     )
 
 # ----------------------------
-# PLANT PROFILES
+# ПРОФИЛИ РАСТЕНИЙ
 # ----------------------------
-plant_profiles = {
-    "Grass": {"coef": 1.0, "img": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Grass_closeup.jpg"},
-    "Vegetables": {"coef": 1.3, "img": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Vegetable_garden.jpg"},
-    "Trees": {"coef": 1.6, "img": "https://upload.wikimedia.org/wikipedia/commons/3/3a/Oak_tree.jpg"},
-    "Greenhouse crops": {"coef": 1.8, "img": "https://upload.wikimedia.org/wikipedia/commons/6/6e/Greenhouse_tomatoes.jpg"}
+профили = {
+    "Газон": 1.0,
+    "Овощи": 1.3,
+    "Деревья": 1.6,
+    "Тепличные культуры": 1.8
 }
 
-profile = plant_profiles[plant_type]
-
-st.image(profile["img"], caption=plant_type, use_container_width=True)
+коэф = профили[тип_растения]
 
 # ----------------------------
-# STATE
+# СОСТОЯНИЕ
 # ----------------------------
 if "run" not in st.session_state:
     st.session_state.run = False
 
-if st.button("Run AI Analysis"):
+if st.button("Запустить анализ ИИ"):
     st.session_state.run = True
 
 # ----------------------------
-# API
+# API ПОГОДЫ
 # ----------------------------
 @st.cache_data(show_spinner=False)
-def get_data(lat, lon):
+def получить_данные(lat, lon):
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat}"
@@ -74,103 +75,116 @@ def get_data(lat, lon):
     r.raise_for_status()
     return r.json()
 
-
-def build_df(data):
+# ----------------------------
+# DATAFRAME
+# ----------------------------
+def построить_df(data):
     return pd.DataFrame({
-        "time": pd.to_datetime(data["hourly"]["time"]),
-        "rain": data["hourly"]["precipitation"],
-        "temp": data["hourly"]["temperature_2m"]
+        "время": pd.to_datetime(data["hourly"]["time"]),
+        "дождь": data["hourly"]["precipitation"],
+        "температура": data["hourly"]["temperature_2m"]
     })
 
+# ----------------------------
+# ИНДЕКС ЗАСУХИ
+# ----------------------------
+def индекс_засухи(df):
+    дождь = df["дождь"].sum()
+    температура = df["температура"].mean()
+    return max(0, min(100, 100 - дождь * 5 + (температура - 20) * 2))
 
-def stress_index(df):
-    rain = df["rain"].sum()
-    temp = df["temp"].mean()
-    return max(0, min(100, 100 - rain * 5 + (temp - 20) * 2))
+# ----------------------------
+# ОБЪЁМ ПОЛИВА
+# ----------------------------
+def объём_полива(temp, stress, coef):
+    базовый = 5 + (temp - 20) * 0.3 + stress * 0.1
+    return max(2, round(базовый * coef, 1))
 
-
-def irrigation_volume(temp, stress, coef):
-    base = 5 + (temp - 20) * 0.3 + stress * 0.1
-    return max(2, round(base * coef, 1))
-
-
-def recommend(df, temp_min, rain_max, hours, stress, coef):
+# ----------------------------
+# РЕКОМЕНДАЦИИ ПОЛИВА
+# ----------------------------
+def рекомендации(df, t_min, rain_max, часы, stress, coef):
     res = []
 
     for i in range(len(df) - 12):
-        t = df.loc[i, "time"]
-        rain = df.loc[i, "rain"]
-        temp = df.loc[i, "temp"]
-        future_rain = df.loc[i:i+12, "rain"].sum()
+        t = df.loc[i, "время"]
+        дождь = df.loc[i, "дождь"]
+        temp = df.loc[i, "температура"]
 
-        if t.hour in hours:
-            if rain <= rain_max and temp >= temp_min and future_rain < 2:
-                vol = irrigation_volume(temp, stress, coef)
+        будущий_дождь = df.loc[i:i+12, "дождь"].sum()
+
+        if t.hour in часы:
+            if дождь <= rain_max and temp >= t_min and будущий_дождь < 2:
+                литры = объём_полива(temp, stress, coef)
 
                 res.append({
-                    "time": t,
-                    "liters": vol
+                    "время": t,
+                    "литры": литры
                 })
 
     return res
 
-
-def create_map(lat, lon):
+# ----------------------------
+# КАРТА
+# ----------------------------
+def карта(lat, lon):
     m = folium.Map(location=[lat, lon], zoom_start=9)
-    folium.Marker([lat, lon]).add_to(m)
+    folium.Marker([lat, lon], tooltip="Участок полива").add_to(m)
     return m
 
-
 # ----------------------------
-# RUN
+# ЗАПУСК
 # ----------------------------
 if st.session_state.run:
 
-    data = get_data(lat, lon)
-    df = build_df(data)
+    data = получить_данные(широта, долгота)
+    df = построить_df(data)
 
-    stress = stress_index(df)
+    stress = индекс_засухи(df)
 
-    schedule = recommend(
+    план = рекомендации(
         df,
-        min_temp,
-        max_rain,
-        irrigation_hours,
+        мин_температура,
+        макс_дождь,
+        часы_полива,
         stress,
-        profile["coef"]
+        коэф
     )
 
-    # MAP
-    st.subheader("📍 Location Map")
-    st_folium(create_map(lat, lon), width=700, height=400, key="map")
+    # ---------------- КАРТА ----------------
+    st.subheader("📍 Карта участка")
+    st_folium(карта(широта, долгота), width=700, height=400, key="map")
 
-    # STRESS
-    st.subheader("🧠 Water Stress Index")
-    st.metric("Stress", f"{stress:.1f}")
+    # ---------------- ИНДЕКС ----------------
+    st.subheader("🧠 Индекс засухи")
+    st.metric("Уровень (0–100)", f"{stress:.1f}")
 
-    # GRAPH
-    st.subheader("📊 Weather & Irrigation Plan")
+    # ---------------- ГРАФИК ----------------
+    st.subheader("📊 Погода и план полива")
 
     fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(df["time"], df["rain"], label="Rain")
-    ax.plot(df["time"], df["temp"], label="Temp")
+    ax.plot(df["время"], df["дождь"], label="Дождь (мм)")
+    ax.plot(df["время"], df["температура"], label="Температура (°C)")
 
-    for s in schedule:
-        ax.axvline(s["time"], linestyle="--", alpha=0.7)
+    for p in план:
+        ax.axvline(p["время"], linestyle="--", alpha=0.7)
 
     ax.legend()
+    plt.xticks(rotation=45)
+
     st.pyplot(fig)
     plt.close(fig)
 
-    # IRRIGATION
-    st.subheader("💧 Irrigation Plan")
+    # ---------------- ПЛАН ПОЛИВА ----------------
+    st.subheader("💧 Рекомендованный полив")
 
-    if schedule:
-        for s in schedule:
-            st.write(f"🌱 {s['time'].strftime('%d %b %H:%M')} → {s['liters']} L/m²")
+    if план:
+        for p in план:
+            st.write(f"🌱 {p['время'].strftime('%d.%m %H:%M')} → {p['литры']} л/м²")
     else:
-        st.warning("No irrigation needed")
+        st.warning("Полив не требуется при текущих условиях")
 
-    # PLANT INFO
-    st.subheader("🌿 Plant Profile")
-    st.write(f"Coefficient: {profile['coef']}")
+    # ---------------- КОЭФФИЦИЕНТ ----------------
+    st.subheader("🌿 Тип растения")
+    st.write(f"Выбран тип: **{тип_растения}**")
+    st.write(f"Коэффициент водопотребления: **{коэф}**")
