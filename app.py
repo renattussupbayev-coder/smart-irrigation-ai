@@ -10,16 +10,16 @@ from streamlit_folium import st_folium
 # ----------------------------
 st.set_page_config(page_title="Smart Irrigation AI", layout="wide")
 
-st.title("🌱 Smart Irrigation AI System (Stable MVP)")
+st.title("🌱 Smart Irrigation AI System (Predictive MVP)")
 
 # ----------------------------
 # INPUT
 # ----------------------------
-lat = st.number_input("Latitude", value=45.2389)
-lon = st.number_input("Longitude", value=78.8897)
+lat = st.number_input("Latitude", value=43.2389)
+lon = st.number_input("Longitude", value=76.8897)
 
 # ----------------------------
-# SESSION STATE (IMPORTANT FIX)
+# SESSION STATE
 # ----------------------------
 if "run" not in st.session_state:
     st.session_state.run = False
@@ -29,7 +29,7 @@ if st.button("Run AI Analysis"):
 
 
 # ----------------------------
-# CACHED API (IMPORTANT FIX)
+# WEATHER API
 # ----------------------------
 @st.cache_data(show_spinner=False)
 def get_data(lat, lon):
@@ -48,11 +48,14 @@ def get_data(lat, lon):
     data = r.json()
 
     if "hourly" not in data:
-        raise ValueError("No hourly data returned")
+        raise ValueError("No hourly weather data returned")
 
     return data
 
 
+# ----------------------------
+# DATAFRAME
+# ----------------------------
 def build_df(data):
     return pd.DataFrame({
         "time": pd.to_datetime(data["hourly"]["time"]),
@@ -61,13 +64,40 @@ def build_df(data):
     })
 
 
+# ----------------------------
+# WATER STRESS INDEX
+# ----------------------------
 def water_stress_index(df):
     rain = df["rain"].sum()
     temp = df["temp"].mean()
+
     index = 100 - (rain * 5) + (temp - 20) * 2
     return max(0, min(100, index))
 
 
+# ----------------------------
+# IRRIGATION RECOMMENDATION
+# ----------------------------
+def recommend_irrigation(df):
+    recommendations = []
+
+    for i in range(len(df) - 12):
+        current_time = df.loc[i, "time"]
+        current_rain = df.loc[i, "rain"]
+        current_temp = df.loc[i, "temp"]
+
+        future_rain = df.loc[i:i+12, "rain"].sum()
+
+        if current_time.hour in [4, 5, 6]:
+            if current_rain == 0 and future_rain < 1 and current_temp > 20:
+                recommendations.append(current_time)
+
+    return recommendations
+
+
+# ----------------------------
+# MAP
+# ----------------------------
 def create_map(lat, lon):
     m = folium.Map(location=[lat, lon], zoom_start=9)
     folium.Marker([lat, lon], tooltip="Irrigation Site").add_to(m)
@@ -75,27 +105,24 @@ def create_map(lat, lon):
 
 
 # ----------------------------
-# MAIN LOGIC
+# MAIN APP
 # ----------------------------
 if st.session_state.run:
 
     try:
-        # LOAD DATA
         data = get_data(lat, lon)
         df = build_df(data)
 
-        st.success("Data loaded successfully")
+        stress = water_stress_index(df)
+        schedule = recommend_irrigation(df)
 
         # ---------------- MAP ----------------
         st.subheader("📍 Location Map")
-
         m = create_map(lat, lon)
         st_folium(m, width=700, height=400, key="map")
 
         # ---------------- AI INDEX ----------------
         st.subheader("🧠 Water Stress Index")
-
-        stress = water_stress_index(df)
         st.metric("Stress Level (0–100)", f"{stress:.1f}")
 
         if stress > 70:
@@ -106,21 +133,31 @@ if st.session_state.run:
             st.success("Low irrigation need")
 
         # ---------------- GRAPH ----------------
-        st.subheader("📊 Rain & Temperature")
+        st.subheader("📊 Weather Analysis")
 
         fig, ax = plt.subplots(figsize=(12, 5))
         ax.plot(df["time"], df["rain"], label="Rain (mm)")
         ax.plot(df["time"], df["temp"], label="Temperature (°C)")
         ax.legend()
+        plt.xticks(rotation=45)
 
         st.pyplot(fig)
         plt.close(fig)
 
-        # ---------------- KPI ----------------
-        st.subheader("💧 Water Savings Estimate")
+        # ---------------- WATER SAVINGS ----------------
+        st.subheader("💧 Estimated Water Savings")
 
         saved = len(df[df["rain"] > 0]) * 2.5
-        st.metric("Estimated Water Saved (liters)", f"{saved:.1f}")
+        st.metric("Water Saved (liters)", f"{saved:.1f}")
+
+        # ---------------- RECOMMENDATIONS ----------------
+        st.subheader("🌱 Recommended Irrigation Times")
+
+        if schedule:
+            for t in schedule[:10]:
+                st.write("💧", t.strftime("%d %b %Y %H:%M"))
+        else:
+            st.info("No irrigation recommended")
 
     except Exception as e:
         st.error(f"Error: {e}")
