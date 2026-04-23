@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 # ----------------------------
 st.set_page_config(page_title="Smart Irrigation AI", layout="wide")
 
-st.title("🌱 Smart Irrigation AI System (MVP)")
+st.title("🌱 Smart Irrigation AI System (Stable MVP)")
 
 # ----------------------------
 # INPUT
@@ -19,8 +19,19 @@ lat = st.number_input("Latitude", value=43.2389)
 lon = st.number_input("Longitude", value=76.8897)
 
 # ----------------------------
-# API FUNCTION
+# SESSION STATE (IMPORTANT FIX)
 # ----------------------------
+if "run" not in st.session_state:
+    st.session_state.run = False
+
+if st.button("Run AI Analysis"):
+    st.session_state.run = True
+
+
+# ----------------------------
+# CACHED API (IMPORTANT FIX)
+# ----------------------------
+@st.cache_data(show_spinner=False)
 def get_data(lat, lon):
     url = (
         "https://api.open-meteo.com/v1/forecast"
@@ -32,19 +43,16 @@ def get_data(lat, lon):
         "&timezone=auto"
     )
 
-    r = requests.get(url)
+    r = requests.get(url, timeout=10)
     r.raise_for_status()
     data = r.json()
 
     if "hourly" not in data:
-        st.error("No hourly data returned from API")
-        st.stop()
+        raise ValueError("No hourly data returned")
 
     return data
 
-# ----------------------------
-# DATAFRAME
-# ----------------------------
+
 def build_df(data):
     return pd.DataFrame({
         "time": pd.to_datetime(data["hourly"]["time"]),
@@ -52,28 +60,24 @@ def build_df(data):
         "temp": data["hourly"]["temperature_2m"]
     })
 
-# ----------------------------
-# IRRIGATION LOGIC (simple AI index)
-# ----------------------------
+
 def water_stress_index(df):
     rain = df["rain"].sum()
     temp = df["temp"].mean()
-
     index = 100 - (rain * 5) + (temp - 20) * 2
     return max(0, min(100, index))
 
-# ----------------------------
-# MAP FUNCTION
-# ----------------------------
+
 def create_map(lat, lon):
     m = folium.Map(location=[lat, lon], zoom_start=9)
     folium.Marker([lat, lon], tooltip="Irrigation Site").add_to(m)
     return m
 
+
 # ----------------------------
-# RUN BUTTON
+# MAIN LOGIC
 # ----------------------------
-if st.button("Run AI Analysis"):
+if st.session_state.run:
 
     try:
         # LOAD DATA
@@ -86,10 +90,7 @@ if st.button("Run AI Analysis"):
         st.subheader("📍 Location Map")
 
         m = create_map(lat, lon)
-
-        map_container = st.empty()
-        with map_container:
-            st_folium(m, width=700, height=400, key="map")
+        st_folium(m, width=700, height=400, key="map")
 
         # ---------------- AI INDEX ----------------
         st.subheader("🧠 Water Stress Index")
@@ -110,15 +111,13 @@ if st.button("Run AI Analysis"):
         fig, ax = plt.subplots(figsize=(12, 5))
         ax.plot(df["time"], df["rain"], label="Rain (mm)")
         ax.plot(df["time"], df["temp"], label="Temperature (°C)")
-
         ax.legend()
-        plt.xticks(rotation=45)
 
         st.pyplot(fig)
         plt.close(fig)
 
         # ---------------- KPI ----------------
-        st.subheader("💧 Water Insight")
+        st.subheader("💧 Water Savings Estimate")
 
         saved = len(df[df["rain"] > 0]) * 2.5
         st.metric("Estimated Water Saved (liters)", f"{saved:.1f}")
