@@ -47,6 +47,15 @@ def recommend_irrigation(df):
     return irrigation_times
 
 
+def calculate_stress(df):
+    total_rain = df["precipitation_mm"].sum()
+    dry_hours = len(df[df["precipitation_mm"] == 0])
+
+    score = 100 - (total_rain * 10) + (dry_hours * 0.5)
+
+    return max(0, min(100, score))
+
+
 def plot_rain(df, irrigation_times):
     fig, ax = plt.subplots(figsize=(12, 5))
 
@@ -70,8 +79,19 @@ if st.button("Load Weather Data"):
         data = get_weather(lat, lon)
         df = build_dataframe(data)
         irrigation_times = recommend_irrigation(df)
+        stress = calculate_stress(df)
 
         st.success("Weather data loaded successfully")
+
+        st.subheader("Water Stress Index")
+        st.metric("Stress Score", f"{stress:.1f}/100")
+
+        if stress > 70:
+            st.error("High irrigation need")
+        elif stress > 40:
+            st.warning("Moderate irrigation need")
+        else:
+            st.success("Low irrigation need")
 
         fig = plot_rain(df, irrigation_times)
         st.pyplot(fig)
