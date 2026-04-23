@@ -10,13 +10,26 @@ from streamlit_folium import st_folium
 # ----------------------------
 st.set_page_config(page_title="Smart Irrigation AI", layout="wide")
 
-st.title("🌱 Smart Irrigation AI System (Predictive MVP)")
+st.title("🌱 Smart Irrigation AI System (Configurable MVP)")
 
 # ----------------------------
-# INPUT
+# INPUT LAYOUT
 # ----------------------------
-lat = st.number_input("Latitude", value=43.2389)
-lon = st.number_input("Longitude", value=76.8897)
+col1, col2 = st.columns(2)
+
+with col1:
+    lat = st.number_input("Latitude", value=43.2389)
+    lon = st.number_input("Longitude", value=76.8897)
+
+with col2:
+    min_temp = st.number_input("Minimum temperature for irrigation (°C)", value=15.0)
+    max_current_rain = st.number_input("Maximum current rain (mm)", value=0.2)
+    max_future_rain = st.number_input("Maximum rain next 12h (mm)", value=2.0)
+    irrigation_hours = st.multiselect(
+        "Allowed irrigation hours",
+        options=list(range(24)),
+        default=[4, 5, 6, 7]
+    )
 
 # ----------------------------
 # SESSION STATE
@@ -72,9 +85,9 @@ def water_stress_index(df):
     return max(0, min(100, index))
 
 # ----------------------------
-# IRRIGATION RECOMMENDATION
+# IRRIGATION LOGIC
 # ----------------------------
-def recommend_irrigation(df):
+def recommend_irrigation(df, min_temp, max_current_rain, max_future_rain, irrigation_hours):
     recommendations = []
 
     for i in range(len(df) - 12):
@@ -84,8 +97,12 @@ def recommend_irrigation(df):
 
         future_rain = df.loc[i:i+12, "rain"].sum()
 
-        if current_time.hour in [4, 5, 6, 7]:
-            if current_rain < 0.2 and future_rain < 2 and current_temp > 15:
+        if current_time.hour in irrigation_hours:
+            if (
+                current_rain <= max_current_rain
+                and future_rain <= max_future_rain
+                and current_temp >= min_temp
+            ):
                 recommendations.append(current_time)
 
     return recommendations
@@ -108,36 +125,30 @@ if st.session_state.run:
         df = build_df(data)
 
         stress = water_stress_index(df)
-        schedule = recommend_irrigation(df)
+        schedule = recommend_irrigation(
+            df,
+            min_temp,
+            max_current_rain,
+            max_future_rain,
+            irrigation_hours
+        )
 
         # ---------------- MAP ----------------
         st.subheader("📍 Location Map")
         m = create_map(lat, lon)
         st_folium(m, width=700, height=400, key="map")
 
-        # ---------------- STRESS INDEX ----------------
+        # ---------------- STRESS ----------------
         st.subheader("🧠 Water Stress Index")
         st.metric("Stress Level (0–100)", f"{stress:.1f}")
-
-        if stress > 70:
-            st.error("High irrigation need")
-        elif stress > 40:
-            st.warning("Moderate irrigation need")
-        else:
-            st.success("Low irrigation need")
-
-        # ---------------- DEBUG ----------------
-        st.write("DEBUG recommendations found:", len(schedule))
 
         # ---------------- GRAPH ----------------
         st.subheader("📊 Weather & Irrigation Schedule")
 
         fig, ax = plt.subplots(figsize=(14, 6))
-
         ax.plot(df["time"], df["rain"], label="Rain (mm)")
         ax.plot(df["time"], df["temp"], label="Temperature (°C)")
 
-        # irrigation lines
         for t in schedule:
             ax.axvline(x=t, linestyle="--", linewidth=2, alpha=0.8)
 
@@ -155,11 +166,11 @@ if st.session_state.run:
         # ---------------- RECOMMENDATIONS ----------------
         st.subheader("🌱 Recommended Irrigation Times")
 
-        if len(schedule) > 0:
+        if schedule:
             for t in schedule[:10]:
                 st.write("💧", t.strftime("%d %b %Y %H:%M"))
         else:
-            st.warning("No irrigation times found for current forecast")
+            st.warning("No irrigation times found with current settings")
 
     except Exception as e:
         st.error(f"Error: {e}")
