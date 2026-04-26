@@ -1,26 +1,28 @@
 import streamlit as st
 import requests
 import pandas as pd
+import matplotlib.pyplot as plt
 from datetime import datetime
 
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
 
-st.set_page_config(page_title="DEBUG AI IRRIGATION", layout="wide")
-st.title("🧪 DEBUG MODE - AI Irrigation")
+# ---------------------------------
+# PAGE
+# ---------------------------------
+st.set_page_config(page_title="AI Irrigation System", layout="wide")
+st.title("🌱 Smart Irrigation AI (Stable Version)")
 
-# -----------------------
+# ---------------------------------
 # INPUTS
-# -----------------------
-lat = st.number_input("lat", value=43.2389)
-lon = st.number_input("lon", value=76.8897)
+# ---------------------------------
+lat = st.number_input("Широта", value=43.2389)
+lon = st.number_input("Долгота", value=76.8897)
 
-st.write("STARTED OK")
-
-# -----------------------
-# API TEST
-# -----------------------
-def openmeteo(lat, lon):
+# ---------------------------------
+# API
+# ---------------------------------
+@st.cache_data
+def get_weather(lat, lon):
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat}&longitude={lon}"
@@ -28,15 +30,11 @@ def openmeteo(lat, lon):
         "&past_days=2&forecast_days=2&timezone=auto"
     )
     r = requests.get(url, timeout=10)
-    st.write("API status:", r.status_code)
-    data = r.json()
+    return r.json()
 
-    st.write("RAW keys:", data.keys())
-    return data
-
-# -----------------------
-# BUILD DF
-# -----------------------
+# ---------------------------------
+# DATA
+# ---------------------------------
 def build_df(data):
     df = pd.DataFrame({
         "time": pd.to_datetime(data["hourly"]["time"]),
@@ -44,65 +42,144 @@ def build_df(data):
         "temp": data["hourly"]["temperature_2m"]
     })
 
-    st.write("DF created:", df.shape)
-    st.dataframe(df.head())
+    df = df.fillna(0)
+    df = df.reset_index(drop=True)
 
     return df
 
-# -----------------------
+# ---------------------------------
 # FEATURES
-# -----------------------
-def features(df):
+# ---------------------------------
+def make_features(df):
+    df = df.copy()
+
     df["hour"] = df["time"].dt.hour
-    df["rain_6h"] = df["rain"].rolling(3, min_periods=1).sum()
-    df["rain_24h"] = df["rain"].rolling(6, min_periods=1).sum()
+
+    # safe rolling (IMPORTANT FIX)
+    df["rain_3h"] = df["rain"].rolling(3, min_periods=1).sum()
+    df["rain_6h"] = df["rain"].rolling(6, min_periods=1).sum()
+
     return df
 
-# -----------------------
-# TRAIN SAFE MODEL
-# -----------------------
-def train(df):
+# ---------------------------------
+# TARGET (synthetic irrigation need)
+# ---------------------------------
+def make_target(df):
+    stress = (
+        100
+        - df["rain_6h"] * 4
+        + (df["temp"] - 20) * 2
+    )
+
+    stress = stress.clip(0, 100)
+
+    df["target"] = 5 + stress * 0.1
+
+    return df
+
+# ---------------------------------
+# TRAIN MODEL
+# ---------------------------------
+def train_model(df):
+    features = ["temp", "rain", "rain_3h", "rain_6h", "hour"]
+
     df = df.dropna()
 
-    st.write("After dropna:", df.shape)
-
-    if len(df) < 10:
-        st.error("❌ Too little data for training")
-        return None
-
-    df["target"] = df["temp"] * 0.5 + df["rain"] * -2 + 5
-
-    X = df[["temp", "rain", "rain_6h", "rain_24h", "hour"]]
+    X = df[features]
     y = df["target"]
 
-    model = RandomForestRegressor(n_estimators=50)
+    if len(df) < 10:
+        st.error("❌ Not enough data for training")
+        return None
+
+    model = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=8,
+        random_state=42
+    )
 
     model.fit(X, y)
 
-    st.success("✅ Model trained")
-
     return model
 
-# -----------------------
+# ---------------------------------
+# PREDICT
+# ---------------------------------
+def predict(df, model):
+    features = ["temp", "rain", "rain_3h", "rain_6h", "hour"]
+    df["pred"] = model.predict(df[features])
+    return df
+
+# ---------------------------------
+# DECISION ENGINE
+# ---------------------------------
+def irrigation_decision(df):
+    threshold = df["pred"].quantile(0.75)
+
+    df["irrigate"] = df["pred"] > threshold
+
+    return df, threshold
+
+# ---------------------------------
 # RUN
-# -----------------------
-if st.button("RUN DEBUG AI"):
+# ---------------------------------
+if st.button("🚀 Run AI Irrigation"):
 
     try:
-        data = openmeteo(lat, lon)
+        data = get_weather(lat, lon)
         df = build_df(data)
 
-        df = features(df)
+        df = make_features(df)
+        df = make_target(df)
 
-        model = train(df)
+        model = train_model(df)
 
         if model is None:
             st.stop()
 
-        df["pred"] = model.predict(df[["temp","rain","rain_6h","rain_24h","hour"]])
+        df = predict(df, model)
 
-        st.write("PREDICTIONS:")
-        st.dataframe(df[["time","pred"]].head(20))
+        df, threshold = irrigation_decision(df)
+
+        # ---------------------------------
+        # RESULTS
+        # ---------------------------------
+
+        st.subheader("📊 Prediction")
+
+        fig, ax = plt.subplots(figsize=(12,5))
+        ax.plot(df["time"], df["temp"], label="Temp")
+        ax.plot(df["time"], df["rain"], label="Rain")
+        ax.plot(df["time"], df["pred"], label="Water need (AI)")
+
+        ax.legend()
+        st.pyplot(fig)
+        plt.close(fig)
+
+        # ---------------------------------
+        # DECISION
+        # ---------------------------------
+
+        st.subheader("💧 Irrigation Plan")
+
+        st.info(f"Threshold: {round(threshold,2)}")
+
+        plan = df[df["irrigate"]]
+
+        if len(plan) == 0:
+            st.success("✅ No irrigation needed")
+        else:
+            for _, row in plan.iterrows():
+                st.write(
+                    f"{row['time']} → "
+                    f"{round(row['pred'],1)} units water"
+                )
+
+        # ---------------------------------
+        # DEBUG TABLE
+        # ---------------------------------
+        st.subheader("📋 Data")
+        st.dataframe(df[["time","temp","rain","pred","irrigate"]])
 
     except Exception as e:
-        st.error(f"CRASH: {e}")
+        st.error(f"System error: {e}")
