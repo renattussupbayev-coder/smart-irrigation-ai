@@ -265,29 +265,7 @@ if st.session_state.run:
     ax.plot(df["время"], df["температура"], label="Температура")
 
     for p in plan:
-    duration_minutes = p["liters"] * 2
-    lines_count = max(1, int(duration_minutes / 15))
-
-    if p["liters"] < 20:
-        line_color = "lightblue"
-        line_width = 1
-    elif p["liters"] < 40:
-        line_color = "blue"
-        line_width = 1.5
-    else:
-        line_color = "darkblue"
-        line_width = 2
-
-    for n in range(lines_count):
-        offset = pd.Timedelta(minutes=n * 15)
-
-        ax.axvline(
-            p["time"] + offset,
-            linestyle="--",
-            alpha=0.75,
-            color=line_color,
-            linewidth=line_width
-        )
+        ax.axvline(p["time"], linestyle="--", alpha=0.7)
 
     ax.legend()
     st.pyplot(fig)
