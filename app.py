@@ -222,7 +222,8 @@ def recommend(df, tmin, banned, stress_value, coef):
         liters = volume(temp, stress_value, coef)
 
         if plan and plan[-1]["time"].date() == day:
-    continue
+            continue
+
         else:
             plan.append({
                 "time": t,
