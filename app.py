@@ -13,63 +13,6 @@ st.set_page_config(page_title="Умный полив ИИ", layout="wide")
 st.title("🌱 Система умного полива (AI multi-source model)")
 
 # ----------------------------
-# ИИ РЕКОМЕНДАЦИИ ПО ЛОКАЦИИ
-# ----------------------------
-def ai_recommendations(lat: float, lon: float, plant_type: str) -> dict:
-    """
-    Вычисляет рекомендованные пороги полива на основе:
-    - климатической зоны (широта)
-    - типа растения
-    Возвращает словарь с рекомендованными значениями и пояснениями.
-    """
-    # Климатическая зона по широте
-    abs_lat = abs(lat)
-
-    if abs_lat < 23.5:
-        zone = "тропики"
-        base_min_temp = 18.0
-        base_max_rain = 0.5
-        zone_comment = "тропическая зона"
-    elif abs_lat < 35:
-        zone = "субтропики"
-        base_min_temp = 16.0
-        base_max_rain = 0.3
-        zone_comment = "субтропическая зона"
-    elif abs_lat < 50:
-        zone = "умеренная"
-        base_min_temp = 12.0
-        base_max_rain = 0.2
-        zone_comment = "умеренная зона"
-    elif abs_lat < 65:
-        zone = "субарктика"
-        base_min_temp = 8.0
-        base_max_rain = 0.15
-        zone_comment = "субарктическая зона"
-    else:
-        zone = "арктика"
-        base_min_temp = 5.0
-        base_max_rain = 0.1
-        zone_comment = "арктическая зона"
-
-    # Поправка по типу растения
-    plant_adjustments = {
-        "Газон":   {"temp_delta": 0.0,  "rain_delta": 0.0},
-        "Овощи":   {"temp_delta": 2.0,  "rain_delta": -0.05},
-        "Деревья": {"temp_delta": -2.0, "rain_delta": 0.1},
-    }
-    adj = plant_adjustments.get(plant_type, {"temp_delta": 0, "rain_delta": 0})
-
-    rec_min_temp = round(base_min_temp + adj["temp_delta"], 1)
-    rec_max_rain = round(max(0.05, base_max_rain + adj["rain_delta"]), 2)
-
-    return {
-        "min_temp": rec_min_temp,
-        "max_rain": rec_max_rain,
-        "zone": zone,
-        "zone_comment": zone_comment,
-    }
-
-# ----------------------------
 # ВХОДНЫЕ ДАННЫЕ
 # ----------------------------
 col1, col2 = st.columns(2)
@@ -83,41 +26,13 @@ with col1:
         ["Газон", "Овощи", "Деревья"]
     )
 
-# Вычисляем рекомендации ДО отрисовки col2, чтобы показать подсказки
-rec = ai_recommendations(широта, долгота, тип_растения)
-
 with col2:
-    мин_температура = st.number_input(
-        "Мин. температура для полива (°C)",
-        value=15.0
-    )
-    st.caption(
-        f"🤖 ИИ-рекомендация для **{rec['zone_comment']}** "
-        f"({тип_растения.lower()}): **{rec['min_temp']} °C**"
-    )
-
-    макс_дождь = st.number_input(
-        "Макс. текущий дождь (мм)",
-        value=0.2
-    )
-    st.caption(
-        f"🤖 ИИ-рекомендация для **{rec['zone_comment']}** "
-        f"({тип_растения.lower()}): **{rec['max_rain']} мм**"
-    )
-
+    мин_температура = st.number_input("Мин. температура для полива (°C)", value=15.0)
+    макс_дождь = st.number_input("Макс. текущий дождь (мм)", value=0.2)
     часы_полива = st.multiselect(
         "Разрешённые часы полива",
         options=list(range(24)),
         default=[4, 5, 6, 7]
-    )
-
-# Кнопка «применить рекомендации»
-if st.button("✨ Применить ИИ-рекомендации к параметрам"):
-    st.info(
-        f"Рекомендованные значения для вашей локации ({rec['zone_comment']}, {тип_растения.lower()}):\n"
-        f"- Мин. температура: **{rec['min_temp']} °C**\n"
-        f"- Макс. дождь: **{rec['max_rain']} мм**\n\n"
-        "Введите эти значения вручную в поля выше."
     )
 
 # ----------------------------
