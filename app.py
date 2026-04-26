@@ -28,6 +28,7 @@ with col1:
 
 with col2:
     мин_температура = st.number_input("Мин. температура для полива (°C)", value=15.0)
+    макс_дождь = st.number_input("Макс. текущий дождь (мм)", value=0.2)
     часы_полива = st.multiselect(
         "Разрешённые часы полива",
         options=list(range(24)),
