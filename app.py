@@ -54,7 +54,7 @@ with col2:
 
     with temp_col2:
         st.markdown("### ")
-        st.info(f"Реком.: {recommended_temp}°C")
+        st.info(f"ИИ Реком.: {recommended_temp}°C")
 
     запрещенные_часы = st.multiselect(
         "Запрещённые часы полива",
