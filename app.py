@@ -6,17 +6,18 @@ import folium
 from streamlit_folium import st_folium
 from datetime import datetime
 
-# --------------------------------
-# Настройка страницы
-# --------------------------------
+# ---------------------------------
+# НАСТРОЙКА СТРАНИЦЫ
+# ---------------------------------
 st.set_page_config(page_title="Умный полив ИИ", layout="wide")
-st.title("🌱 Интеллектуальная система полива")
+st.title("🌱 Система умного полива (AI multi-source model)")
 
-# --------------------------------
-# Сезонная температура
-# --------------------------------
-def get_season_temp():
+# ---------------------------------
+# СЕЗОННАЯ МИНИМАЛЬНАЯ ТЕМПЕРАТУРА
+# ---------------------------------
+def seasonal_temp():
     month = datetime.now().month
+
     if month in [12, 1, 2]:
         return 5
     elif month in [3, 4, 5]:
@@ -26,222 +27,279 @@ def get_season_temp():
     else:
         return 7
 
-recommended_temp = get_season_temp()
+рек_темп = seasonal_temp()
 
-# --------------------------------
-# Интерфейс
-# --------------------------------
+# ---------------------------------
+# ВХОДНЫЕ ДАННЫЕ
+# ---------------------------------
 col1, col2 = st.columns(2)
 
 with col1:
-    lat = st.number_input("Широта", value=43.2389)
-    lon = st.number_input("Долгота", value=76.8897)
+    широта = st.number_input("Широта", value=43.2389)
+    долгота = st.number_input("Долгота", value=76.8897)
 
-    plant_type = st.selectbox(
+    тип_растения = st.selectbox(
         "Тип растения",
         ["Газон", "Овощи", "Деревья"]
     )
 
 with col2:
-    min_temp = st.number_input(
-        "Минимальная температура полива (°C)",
-        value=float(recommended_temp),
-        min_value=5.0
-    )
+    temp_col1, temp_col2 = st.columns([2, 1])
 
-    st.caption(f"Рекомендуемая температура сезона: {recommended_temp} °C")
+    with temp_col1:
+        мин_температура = st.number_input(
+            "Мин. температура для полива (°C)",
+            value=float(рек_темп)
+        )
 
-    forbidden_hours = st.multiselect(
+    with temp_col2:
+        st.metric("Рекомендовано", f"{рек_темп} °C")
+
+    запрещенные_часы = st.multiselect(
         "Запрещённые часы полива",
         options=list(range(24)),
         default=[10,11,12,13,14,15,16,17]
     )
 
-# --------------------------------
-# Параметры растений
-# --------------------------------
-plant_coef = {
+# ---------------------------------
+# ПРОФИЛИ РАСТЕНИЙ
+# ---------------------------------
+профили = {
     "Газон": 1.0,
     "Овощи": 1.3,
     "Деревья": 1.6
 }
 
-coef = plant_coef[plant_type]
+коэф = профили[тип_растения]
 
-# --------------------------------
-# Загрузка погоды
-# --------------------------------
-@st.cache_data
-def get_weather(lat, lon):
+st.info("""
+💡 Коэффициент водопотребления показывает,
+сколько воды требуется растению относительно базового уровня.
+
+Газон = 1.0  
+Овощи = 1.3  
+Деревья = 1.6  
+""")
+
+# ---------------------------------
+# API KEY
+# ---------------------------------
+OPENWEATHER_API_KEY = ""
+
+# ---------------------------------
+# ЗАПУСК
+# ---------------------------------
+if "run" not in st.session_state:
+    st.session_state.run = False
+
+if st.button("Запустить анализ ИИ"):
+    st.session_state.run = True
+
+# ---------------------------------
+# OPEN-METEO
+# ---------------------------------
+@st.cache_data(show_spinner=False)
+def openmeteo(lat, lon):
     url = (
         "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={lat}"
-        f"&longitude={lon}"
+        f"?latitude={lat}&longitude={lon}"
         "&hourly=precipitation,temperature_2m"
-        "&forecast_days=7"
-        "&timezone=auto"
+        "&past_days=7&forecast_days=7&timezone=auto"
+    )
+    return requests.get(url, timeout=10).json()
+
+# ---------------------------------
+# OPENWEATHER
+# ---------------------------------
+def openweather(lat, lon, key):
+    if not key:
+        return None
+
+    url = (
+        "https://api.openweathermap.org/data/2.5/forecast"
+        f"?lat={lat}&lon={lon}&appid={key}&units=metric"
+    )
+    return requests.get(url, timeout=10).json()
+
+# ---------------------------------
+# DATAFRAME
+# ---------------------------------
+def df_meteo(data):
+    return pd.DataFrame({
+        "время": pd.to_datetime(data["hourly"]["time"]),
+        "дождь": data["hourly"]["precipitation"],
+        "температура": data["hourly"]["temperature_2m"]
+    })
+
+def df_owm(data):
+    if not data:
+        return None
+
+    return pd.DataFrame({
+        "время": pd.to_datetime([x["dt_txt"] for x in data["list"]]),
+        "дождь_2": [x.get("rain", {}).get("3h", 0) for x in data["list"]],
+        "температура_2": [x["main"]["temp"] for x in data["list"]]
+    })
+
+# ---------------------------------
+# AI ВЗВЕШИВАНИЕ
+# ---------------------------------
+def fusion(df1, df2):
+    if df2 is None:
+        return df1
+
+    w1 = 0.65
+    w2 = 0.35
+
+    df = pd.merge_asof(
+        df1.sort_values("время"),
+        df2.sort_values("время"),
+        on="время"
     )
 
-    response = requests.get(url, timeout=10)
-    data = response.json()
-
-    df = pd.DataFrame({
-        "time": pd.to_datetime(data["hourly"]["time"]),
-        "rain": data["hourly"]["precipitation"],
-        "temp": data["hourly"]["temperature_2m"]
-    })
+    df["дождь"] = df["дождь"]*w1 + df["дождь_2"].fillna(0)*w2
+    df["температура"] = df["температура"]*w1 + df["температура_2"].fillna(df["температура"])*w2
 
     return df
 
-# --------------------------------
-# Индекс засухи
-# --------------------------------
-def drought_index(df):
-    rain_sum = df["rain"].sum()
-    temp_avg = df["temp"].mean()
+# ---------------------------------
+# AI ДОПУСТИМЫЙ ДОЖДЬ
+# ---------------------------------
+def ai_rain_limit(temp, stress):
+    limit = 0.3 + (stress / 100) * 1.2 + max(0, temp - 20) * 0.05
+    return round(limit, 2)
 
-    index = 100 - rain_sum * 4 + (temp_avg - 20) * 2
-    index = max(0, min(index, 100))
+# ---------------------------------
+# ИНДЕКС ЗАСУХИ
+# ---------------------------------
+def stress(df):
+    rain = df["дождь"].sum()
+    temp = df["температура"].mean()
+    return max(0, min(100, 100 - rain * 5 + (temp - 20) * 2))
 
-    return index
+# ---------------------------------
+# ОБЪЕМ ВОДЫ
+# ---------------------------------
+def volume(temp, stress, coef):
+    base = 5 + (temp - 20) * 0.3 + stress * 0.1
+    return max(2, round(base * coef, 1))
 
-# --------------------------------
-# Допустимый дождь AI
-# --------------------------------
-def rain_limit_ai(stress):
-    return max(0.2, 2.5 - stress / 50)
+# ---------------------------------
+# УМНАЯ РЕКОМЕНДАЦИЯ
+# ---------------------------------
+def recommend(df, tmin, banned, stress_value, coef):
+    plan = []
+    daily_count = {}
 
-# --------------------------------
-# Объем воды
-# --------------------------------
-def calc_water(temp, stress, coef):
-    base = 5 + (temp - 20) * 0.4 + stress * 0.12
-    return round(max(5, base * coef), 1)
+    rain_limit = ai_rain_limit(df["температура"].mean(), stress_value)
 
-# --------------------------------
-# Рекомендации
-# --------------------------------
-def recommend_irrigation(df, min_temp, forbidden_hours, stress, coef):
-    result = []
+    for i in range(len(df) - 12):
+        t = df.loc[i, "время"]
+        day = t.date()
 
-    df = df.copy()
-    df["date"] = df["time"].dt.date
-
-    max_rain = rain_limit_ai(stress)
-
-    for day in df["date"].unique():
-        daily = df[df["date"] == day].copy()
-
-        daily = daily[
-            (~daily["time"].dt.hour.isin(forbidden_hours)) &
-            (daily["temp"] >= min_temp) &
-            (daily["rain"] <= max_rain)
-        ]
-
-        if daily.empty:
+        if t.hour in banned:
             continue
 
-        daily["score"] = (
-            -abs(daily["time"].dt.hour - 5) * 2
-            + daily["temp"] * 0.3
-            - daily["rain"] * 4
-        )
+        if 9 <= t.hour <= 18:
+            continue
 
-        best = daily.sort_values("score", ascending=False).head(2)
+        if daily_count.get(day, 0) >= 2:
+            continue
 
-        for _, row in best.iterrows():
-            liters = calc_water(row["temp"], stress, coef)
+        rain_now = df.loc[i, "дождь"]
+        temp = df.loc[i, "температура"]
+        future_rain = df.loc[i:i+12, "дождь"].sum()
 
-            result.append({
-                "time": row["time"],
+        if temp < tmin:
+            continue
+
+        if rain_now > rain_limit:
+            continue
+
+        if future_rain > rain_limit * 4:
+            continue
+
+        liters = volume(temp, stress_value, coef)
+
+        if plan and plan[-1]["time"].date() == day:
+            plan[-1]["liters"] += liters
+        else:
+            plan.append({
+                "time": t,
                 "liters": liters
             })
+            daily_count[day] = daily_count.get(day, 0) + 1
 
-    return result
+    return plan
 
-# --------------------------------
-# Карта
-# --------------------------------
-def create_map(lat, lon):
-    m = folium.Map(location=[lat, lon], zoom_start=10)
+# ---------------------------------
+# КАРТА
+# ---------------------------------
+def map_view(lat, lon):
+    m = folium.Map(location=[lat, lon], zoom_start=9)
     folium.Marker([lat, lon]).add_to(m)
     return m
 
-# --------------------------------
-# Запуск
-# --------------------------------
-if st.button("Запустить анализ ИИ"):
+# ---------------------------------
+# MAIN
+# ---------------------------------
+if st.session_state.run:
 
-    try:
-        df = get_weather(lat, lon)
+    df1 = df_meteo(openmeteo(широта, долгота))
+    df2 = df_owm(openweather(широта, долгота, OPENWEATHER_API_KEY))
+    df = fusion(df1, df2)
 
-        stress = drought_index(df)
+    s = stress(df)
+    plan = recommend(df, мин_температура, запрещенные_часы, s, коэф)
 
-        plan = recommend_irrigation(
-            df,
-            min_temp,
-            forbidden_hours,
-            stress,
-            coef
+    st.subheader("📍 Карта")
+    st_folium(map_view(широта, долгота), width=700, height=400)
+
+    st.subheader("🧠 Индекс засухи")
+    st.metric("Уровень", f"{s:.1f}")
+
+    st.subheader("📊 Погода и график полива")
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    ax.plot(df["время"], df["дождь"], label="Дождь")
+    ax.plot(df["время"], df["температура"], label="Температура")
+
+    for p in plan:
+    duration_minutes = p["liters"] * 2
+    lines_count = max(1, int(duration_minutes / 15))
+
+    if p["liters"] < 20:
+        line_color = "lightblue"
+        line_width = 1
+    elif p["liters"] < 40:
+        line_color = "blue"
+        line_width = 1.5
+    else:
+        line_color = "darkblue"
+        line_width = 2
+
+    for n in range(lines_count):
+        offset = pd.Timedelta(minutes=n * 15)
+
+        ax.axvline(
+            p["time"] + offset,
+            linestyle="--",
+            alpha=0.75,
+            color=line_color,
+            linewidth=line_width
         )
 
-        st.subheader("📍 Карта")
-        st_folium(create_map(lat, lon), width=700, height=400)
+    ax.legend()
+    st.pyplot(fig)
+    plt.close(fig)
 
-        st.subheader("🧠 Индекс засухи")
-        st.metric("Уровень", f"{stress:.1f}")
+    st.subheader("💧 План полива")
 
-        st.subheader("📊 График")
-
-        fig, ax = plt.subplots(figsize=(14, 6))
-
-        ax.plot(df["time"], df["rain"], label="Дождь")
-        ax.plot(df["time"], df["temp"], label="Температура")
-
+    if plan:
         for p in plan:
-            duration = p["liters"] * 2
-            lines = max(1, int(duration / 15))
-
-            if p["liters"] < 20:
-                color = "lightblue"
-                width = 1
-            elif p["liters"] < 40:
-                color = "blue"
-                width = 1.5
-            else:
-                color = "darkblue"
-                width = 2
-
-            for i in range(lines):
-                offset = pd.Timedelta(minutes=i * 15)
-                ax.axvline(
-                    p["time"] + offset,
-                    linestyle="--",
-                    alpha=0.7,
-                    color=color,
-                    linewidth=width
-                )
-
-        ax.legend()
-        st.pyplot(fig)
-        plt.close(fig)
-
-        st.subheader("💧 План полива")
-
-        if plan:
-            for p in plan:
-                st.write(
-                    f"{p['time'].strftime('%d.%m %H:%M')} → {p['liters']} л/м²"
-                )
-        else:
-            st.warning("Полив не требуется")
-
-        baseline = 10 * 14
-        total_ai = sum(x["liters"] for x in plan)
-        saved = baseline - total_ai
-
-        st.subheader("🌍 Экономия воды")
-        st.metric("Сэкономлено", f"{round(saved,1)} л/м²")
-
-    except Exception as e:
-        st.error(f"Ошибка: {e}")
+            st.write(
+                f"{p['time'].strftime('%d.%m %H:%M')} → "
+                f"{p['liters']} л/м²"
+            )
+    else:
+        st.warning("Полив не требуется")
