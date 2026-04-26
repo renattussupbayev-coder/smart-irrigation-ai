@@ -10,7 +10,7 @@ from datetime import datetime
 # НАСТРОЙКА СТРАНИЦЫ
 # ---------------------------------
 st.set_page_config(page_title="Умный полив ИИ", layout="wide")
-st.title("🌱 Система умного полива (AI multi-source model)")
+st.title("🌱 Система умного полива (AI SMART IRRIGATION)")
 
 # ---------------------------------
 # СЕЗОННАЯ МИНИМАЛЬНАЯ ТЕМПЕРАТУРА
