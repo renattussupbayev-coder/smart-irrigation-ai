@@ -7,66 +7,13 @@ from streamlit_folium import st_folium
 from datetime import datetime
 
 # ---------------------------------
-# THEME (CSS DESIGN ONLY)
+# НАСТРОЙКА СТРАНИЦЫ
 # ---------------------------------
 st.set_page_config(page_title="Умный полив ИИ", layout="wide")
-
-st.markdown("""
-<style>
-    .main {
-        background-color: #0e1117;
-    }
-
-    h1 {
-        color: #7CFF6B;
-        font-weight: 700;
-    }
-
-    .stMetric {
-        background: #161b22;
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid #2c313c;
-    }
-
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-
-    .stButton button {
-        background: linear-gradient(90deg, #00C853, #64DD17);
-        color: black;
-        font-weight: 700;
-        border-radius: 10px;
-        padding: 0.6rem 1rem;
-        border: none;
-    }
-
-    .stButton button:hover {
-        transform: scale(1.02);
-        transition: 0.2s;
-    }
-
-    .css-1d391kg {
-        background-color: #161b22;
-        border-radius: 12px;
-        padding: 10px;
-    }
-
-    .stDataFrame {
-        border-radius: 12px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ---------------------------------
-# TITLE
-# ---------------------------------
 st.title("🌱 Система умного полива (AI multi-source model)")
 
 # ---------------------------------
-# SEASON TEMP
+# СЕЗОННАЯ МИНИМАЛЬНАЯ ТЕМПЕРАТУРА
 # ---------------------------------
 def seasonal_temp():
     month = datetime.now().month
@@ -83,10 +30,8 @@ def seasonal_temp():
 рек_темп = seasonal_temp()
 
 # ---------------------------------
-# INPUTS (CARDS STYLE)
+# ВХОДНЫЕ ДАННЫЕ
 # ---------------------------------
-st.markdown("## 📍 Параметры")
-
 col1, col2 = st.columns(2)
 
 with col1:
@@ -117,7 +62,7 @@ with col2:
     )
 
 # ---------------------------------
-# PLANT PROFILE
+# ПРОФИЛИ РАСТЕНИЙ
 # ---------------------------------
 профили = {
     "Газон": 1.0,
@@ -127,7 +72,14 @@ with col2:
 
 коэф = профили[тип_растения]
 
-st.info("💡 Коэффициент водопотребления: Газон 1.0 | Овощи 1.3 | Деревья 1.6")
+st.info("""
+💡 Коэффициент водопотребления показывает,
+сколько воды требуется растению относительно базового уровня.
+
+Газон = 1.0  
+Овощи = 1.3  
+Деревья = 1.6  
+""")
 
 # ---------------------------------
 # API KEY
@@ -135,16 +87,16 @@ st.info("💡 Коэффициент водопотребления: Газон 
 OPENWEATHER_API_KEY = ""
 
 # ---------------------------------
-# RUN STATE
+# ЗАПУСК
 # ---------------------------------
 if "run" not in st.session_state:
     st.session_state.run = False
 
-if st.button("🚀 Запустить анализ ИИ"):
+if st.button("Запустить анализ ИИ"):
     st.session_state.run = True
 
 # ---------------------------------
-# OPEN METEO
+# OPEN-METEO
 # ---------------------------------
 @st.cache_data(show_spinner=False)
 def openmeteo(lat, lon):
@@ -190,7 +142,7 @@ def df_owm(data):
     })
 
 # ---------------------------------
-# FUSION
+# AI ВЗВЕШИВАНИЕ
 # ---------------------------------
 def fusion(df1, df2):
     if df2 is None:
@@ -211,22 +163,29 @@ def fusion(df1, df2):
     return df
 
 # ---------------------------------
-# FUNCTIONS (UNCHANGED)
+# AI ДОПУСТИМЫЙ ДОЖДЬ
 # ---------------------------------
 def ai_rain_limit(temp, stress):
-    return round(0.3 + (stress / 100) * 1.2 + max(0, temp - 20) * 0.05, 2)
+    limit = 0.3 + (stress / 100) * 1.2 + max(0, temp - 20) * 0.05
+    return round(limit, 2)
 
+# ---------------------------------
+# ИНДЕКС ЗАСУХИ
+# ---------------------------------
 def stress(df):
     rain = df["дождь"].sum()
     temp = df["температура"].mean()
     return max(0, min(100, 100 - rain * 5 + (temp - 20) * 2))
 
+# ---------------------------------
+# ОБЪЕМ ВОДЫ
+# ---------------------------------
 def volume(temp, stress, coef):
     base = 5 + (temp - 20) * 0.3 + stress * 0.1
     return max(2, round(base * coef, 1))
 
 # ---------------------------------
-# RECOMMEND (UNCHANGED)
+# УМНАЯ РЕКОМЕНДАЦИЯ
 # ---------------------------------
 def recommend(df, tmin, banned, stress_value, coef):
     plan = []
@@ -265,13 +224,16 @@ def recommend(df, tmin, banned, stress_value, coef):
         if plan and plan[-1]["time"].date() == day:
             plan[-1]["liters"] += liters
         else:
-            plan.append({"time": t, "liters": liters})
+            plan.append({
+                "time": t,
+                "liters": liters
+            })
             daily_count[day] = daily_count.get(day, 0) + 1
 
     return plan
 
 # ---------------------------------
-# MAP STYLE WRAPPER
+# КАРТА
 # ---------------------------------
 def map_view(lat, lon):
     m = folium.Map(location=[lat, lon], zoom_start=9)
@@ -290,36 +252,32 @@ if st.session_state.run:
     s = stress(df)
     plan = recommend(df, мин_температура, запрещенные_часы, s, коэф)
 
-    # DASHBOARD LAYOUT
-    st.markdown("## 📊 Dashboard")
+    st.subheader("📍 Карта")
+    st_folium(map_view(широта, долгота), width=700, height=400)
 
-    c1, c2 = st.columns([1,1])
+    st.subheader(" Индекс засухи")
+    st.metric("Уровень", f"{s:.1f}")
 
-    with c1:
-        st.subheader("📍 Карта")
-        st_folium(map_view(широта, долгота), width=500, height=350)
+    st.subheader("📊 Погода и график полива")
 
-    with c2:
-        st.subheader("🌡 Индекс засухи")
-        st.metric("Уровень", f"{s:.1f}")
-
-        st.subheader("💧 План")
-        if plan:
-            for p in plan[:5]:
-                st.write(f"{p['time'].strftime('%d.%m %H:%M')} → {p['liters']} л/м²")
-        else:
-            st.success("Полив не требуется")
-
-    # CHART
-    st.markdown("## 📈 Аналитика")
-
-    fig, ax = plt.subplots(figsize=(14,5))
+    fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df["время"], df["дождь"], label="Дождь")
     ax.plot(df["время"], df["температура"], label="Температура")
 
     for p in plan:
-        ax.axvline(p["time"], linestyle="--", alpha=0.3)
+        ax.axvline(p["time"], linestyle="--", alpha=0.7)
 
     ax.legend()
     st.pyplot(fig)
     plt.close(fig)
+
+    st.subheader("💧 План полива")
+
+    if plan:
+        for p in plan:
+            st.write(
+                f"{p['time'].strftime('%d.%m %H:%M')} → "
+                f"{p['liters']} л/м²"
+            )
+    else:
+        st.warning("Полив не требуется")
