@@ -75,10 +75,6 @@ with col2:
 st.info("""
 💡 Коэффициент водопотребления показывает,
 сколько воды требуется растению относительно базового уровня.
-
-Газон = 1.0  
-Овощи = 1.3  
-Деревья = 1.6  
 """)
 
 # ---------------------------------
@@ -166,8 +162,7 @@ def fusion(df1, df2):
 # AI ДОПУСТИМЫЙ ДОЖДЬ
 # ---------------------------------
 def ai_rain_limit(temp, stress):
-    limit = 0.3 + (stress / 100) * 1.2 + max(0, temp - 20) * 0.05
-    return round(limit, 2)
+    return round(0.3 + (stress / 100) * 1.2 + max(0, temp - 20) * 0.05, 2)
 
 # ---------------------------------
 # ИНДЕКС ЗАСУХИ
@@ -185,7 +180,7 @@ def volume(temp, stress, coef):
     return max(2, round(base * coef, 1))
 
 # ---------------------------------
-# УМНАЯ РЕКОМЕНДАЦИЯ
+# РЕКОМЕНДАЦИЯ
 # ---------------------------------
 def recommend(df, tmin, banned, stress_value, coef):
     plan = []
@@ -224,10 +219,7 @@ def recommend(df, tmin, banned, stress_value, coef):
         if plan and plan[-1]["time"].date() == day:
             plan[-1]["liters"] += liters
         else:
-            plan.append({
-                "time": t,
-                "liters": liters
-            })
+            plan.append({"time": t, "liters": liters})
             daily_count[day] = daily_count.get(day, 0) + 1
 
     return plan
@@ -264,8 +256,26 @@ if st.session_state.run:
     ax.plot(df["время"], df["дождь"], label="Дождь")
     ax.plot(df["время"], df["температура"], label="Температура")
 
-    for p in plan:
-        ax.axvline(p["time"], linestyle="--", alpha=0.7)
+    # ---------------------------------
+    # УТОЛЩЕНИЕ ЛИНИЙ ПО ОБЪЕМУ ВОДЫ
+    # ---------------------------------
+    if plan:
+        min_l = min(p["liters"] for p in plan)
+        max_l = max(p["liters"] for p in plan)
+
+        def scale_width(l):
+            if max_l == min_l:
+                return 2
+            return 1 + (l - min_l) / (max_l - min_l) * 6
+
+        for p in plan:
+            ax.axvline(
+                p["time"],
+                linestyle="--",
+                alpha=0.8,
+                linewidth=scale_width(p["liters"]),
+                color="blue"
+            )
 
     ax.legend()
     st.pyplot(fig)
@@ -275,9 +285,6 @@ if st.session_state.run:
 
     if plan:
         for p in plan:
-            st.write(
-                f"{p['time'].strftime('%d.%m %H:%M')} → "
-                f"{p['liters']} л/м²"
-            )
+            st.write(f"{p['time'].strftime('%d.%m %H:%M')} → {p['liters']} л/м²")
     else:
         st.warning("Полив не требуется")
