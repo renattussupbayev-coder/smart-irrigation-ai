@@ -181,7 +181,7 @@ def stress(df):
 # ОБЪЕМ ВОДЫ
 # ---------------------------------
 def volume(temp, stress, coef):
-    base = 4 + max(0, temp - 20) * 0.15 + stress * 0.03
+    base = 4 + max(temp - 20) * 0.15 + stress * 0.05
     return max(2, round(base * coef, 1))
 
 
