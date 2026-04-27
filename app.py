@@ -287,7 +287,7 @@ if st.session_state.run:
     st.pyplot(fig)
     plt.close(fig)
 
-    st.subheader("💧 План полива")
+        st.subheader("💧 План полива")
 
     if plan:
         for p in plan:
@@ -297,7 +297,8 @@ if st.session_state.run:
             )
     else:
         st.warning("Полив не требуется")
-            st.subheader("🌍 Эффективность водосбережения")
+
+    st.subheader("🌍 Эффективность водосбережения")
 
     col_a, col_b, col_c = st.columns(3)
 
