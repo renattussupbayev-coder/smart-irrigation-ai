@@ -184,6 +184,18 @@ def volume(temp, stress, coef):
     base = 4 + (temp - 20) * 0.15 + stress * 0.05
     return max(2, round(base * coef, 1))
 
+# ---------------------------------
+# ЭФФЕКТИВНОСТЬ ВОДОСБЕРЕЖЕНИЯ
+# ---------------------------------
+def water_saving(plan, days=14):
+    standard_daily = 6  # стандартный расход воды л/м² в сутки
+    standard_total = standard_daily * days
+
+    ai_total = sum(p["liters"] for p in plan)
+
+    saving_percent = ((standard_total - ai_total) / standard_total) * 100
+
+    return round(max(0, saving_percent), 1), round(ai_total, 1), round(standard_total, 1)
 
 # ---------------------------------
 # УМНАЯ РЕКОМЕНДАЦИЯ
@@ -254,6 +266,7 @@ if st.session_state.run:
 
     s = stress(df)
     plan = recommend(df, мин_температура, запрещенные_часы, s, коэф)
+    saving_pct, ai_water, standard_water = water_saving(plan)
 
     st.subheader("📍 Карта")
     st_folium(map_view(широта, долгота), width=700, height=400)
@@ -284,3 +297,10 @@ if st.session_state.run:
             )
     else:
         st.warning("Полив не требуется")
+            st.subheader("🌍 Эффективность водосбережения")
+
+    col_a, col_b, col_c = st.columns(3)
+
+    col_a.metric("Экономия воды", f"{saving_pct}%")
+    col_b.metric("AI расход", f"{ai_water} л/м²")
+    col_c.metric("Стандартный расход", f"{standard_water} л/м²")
