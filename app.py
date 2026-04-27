@@ -277,7 +277,14 @@ if st.session_state.run:
     s = stress(df)
     plan = recommend(df, мин_температура, запрещенные_часы, s, коэф)
 
-    saving_pct, ai_water, standard_water = water_saving(plan, коэф)
+    avg_temp = df["температура"].mean()
+
+saving_pct, ai_water, standard_water = water_saving(
+    plan,
+    коэф,
+    avg_temp,
+    широта
+)
 
     st.subheader("📍 Карта")
     st_folium(map_view(широта, долгота), width=700, height=400)
