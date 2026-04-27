@@ -187,8 +187,8 @@ def volume(temp, stress, coef):
 # ---------------------------------
 # ЭФФЕКТИВНОСТЬ ВОДОСБЕРЕЖЕНИЯ
 # ---------------------------------
-def water_saving(plan, days=14):
-    standard_daily = 6  # стандартный расход воды л/м² в сутки
+def water_saving(plan, coef, days=14):
+    standard_daily = 6 * coef
     standard_total = standard_daily * days
 
     ai_total = sum(p["liters"] for p in plan)
@@ -267,7 +267,7 @@ if st.session_state.run:
     s = stress(df)
     plan = recommend(df, мин_температура, запрещенные_часы, s, коэф)
 
-    saving_pct, ai_water, standard_water = water_saving(plan)
+    saving_pct, ai_water, standard_water = water_saving(plan, коэф)
 
     st.subheader("📍 Карта")
     st_folium(map_view(широта, долгота), width=700, height=400)
