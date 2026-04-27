@@ -243,6 +243,9 @@ def recommend(df, tmin, banned, stress_value, coef):
         if future_rain > rain_limit * 4:
             continue
 
+        if past_rain_12h > rain_limit * 4:
+            continue
+
         liters = volume(temp, stress_value, coef)
 
         if plan and plan[-1]["time"].date() == day:
