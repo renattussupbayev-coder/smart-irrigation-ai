@@ -187,15 +187,25 @@ def volume(temp, stress, coef):
 # ---------------------------------
 # ЭФФЕКТИВНОСТЬ ВОДОСБЕРЕЖЕНИЯ
 # ---------------------------------
-def water_saving(plan, coef, days=14):
-    standard_daily = 6 * coef
+def water_saving(plan, coef, avg_temp, lat, days=14):
+    temp_factor = 1 + ((avg_temp - 25) * 0.03)
+    temp_factor = max(0.7, temp_factor)
+
+    lat_factor = 1 + ((45 - abs(lat)) * 0.01)
+    lat_factor = max(0.75, min(1.25, lat_factor))
+
+    standard_daily = 6 * coef * temp_factor * lat_factor
     standard_total = standard_daily * days
 
     ai_total = sum(p["liters"] for p in plan)
 
     saving_percent = ((standard_total - ai_total) / standard_total) * 100
 
-    return round(max(0, saving_percent), 1), round(ai_total, 1), round(standard_total, 1)
+    return (
+        round(max(0, saving_percent), 1),
+        round(ai_total, 1),
+        round(standard_total, 1)
+    )
 
 # ---------------------------------
 # УМНАЯ РЕКОМЕНДАЦИЯ
