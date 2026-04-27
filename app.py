@@ -210,6 +210,7 @@ def recommend(df, tmin, banned, stress_value, coef):
         rain_now = df.loc[i, "дождь"]
         temp = df.loc[i, "температура"]
         future_rain = df.loc[i:i+12, "дождь"].sum()
+        past_rain_12h = df.loc[max(0, i-12):i, "дождь"].sum()
 
         if temp < tmin:
             continue
