@@ -266,12 +266,13 @@ if st.session_state.run:
 
     s = stress(df)
     plan = recommend(df, мин_температура, запрещенные_часы, s, коэф)
+
     saving_pct, ai_water, standard_water = water_saving(plan)
 
     st.subheader("📍 Карта")
     st_folium(map_view(широта, долгота), width=700, height=400)
 
-    st.subheader(" Индекс засухи")
+    st.subheader("Индекс засухи")
     st.metric("Уровень", f"{s:.1f}")
 
     st.subheader("📊 Погода и график полива")
@@ -287,7 +288,7 @@ if st.session_state.run:
     st.pyplot(fig)
     plt.close(fig)
 
-        st.subheader("💧 План полива")
+    st.subheader("💧 План полива")
 
     if plan:
         for p in plan:
